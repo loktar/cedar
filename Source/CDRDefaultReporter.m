@@ -15,6 +15,7 @@
 #pragma mark Memory
 - (id)init {
     if (self = [super init]) {
+        successMessages_ = [[NSMutableArray alloc] init];
         pendingMessages_ = [[NSMutableArray alloc] init];
         failureMessages_ = [[NSMutableArray alloc] init];
     }
@@ -24,6 +25,7 @@
 - (void)dealloc {
     [rootGroups_ release];
     [startTime_ release];
+    [successMessages_ release];
     [failureMessages_ release];
     [pendingMessages_ release];
     [super dealloc];
@@ -62,6 +64,10 @@
 #pragma mark Protected interface
 - (NSString *)successToken {
     return @".";
+}
+
+- (NSString *)successMessageForExample:(CDRExample *)example {
+    return [NSString stringWithFormat:@"SUCCESS %@", [example fullText]];
 }
 
 - (NSString *)pendingToken {
@@ -122,6 +128,7 @@
     switch (example.state) {
         case CDRExampleStatePassed:
             printf("%s", [[self successToken] cStringUsingEncoding:NSUTF8StringEncoding]);
+            [successMessages_ addObject:[self successMessageForExample:example]];
             break;
         case CDRExampleStatePending:
             printf("%s", [[self pendingToken] cStringUsingEncoding:NSUTF8StringEncoding]);
