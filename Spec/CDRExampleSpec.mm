@@ -15,6 +15,16 @@
 
 using namespace Cedar::Matchers;
 
+void (^runInFocusedSpecsMode)(CDRExampleBase *) = ^(CDRExampleBase *example){
+    BOOL before = [SpecHelper specHelper].shouldOnlyRunFocused;
+    [SpecHelper specHelper].shouldOnlyRunFocused = YES;
+    @try {
+        [example run];
+    } @finally {
+        [SpecHelper specHelper].shouldOnlyRunFocused = before;
+    }
+};
+
 SPEC_BEGIN(CDRExampleSpec)
 
 typedef void (^CDRSharedExampleBlock)(NSDictionary *context);
@@ -38,6 +48,11 @@ CDRSharedExampleBlock sharedExampleMethod = [^(NSDictionary *context) {
             NSString *fullText = example.fullText;
             expect(fullText).to(equal(exampleText));
         });
+
+        it(@"should return just its own text in one piece", ^{
+            NSArray *fullTextPieces = example.fullTextInPieces;
+            expect([fullTextPieces isEqual:[NSArray arrayWithObject:exampleText]]).to(be_truthy());
+        });
     });
 
     describe(@"with a parent", ^{
@@ -59,6 +74,12 @@ CDRSharedExampleBlock sharedExampleMethod = [^(NSDictionary *context) {
             expect(fullText).to(equal([NSString stringWithFormat:@"%@ %@", groupText, exampleText]));
         });
 
+        it(@"should return its parent's text pre-pended with its own text in pieces", ^{
+            NSArray *fullTextPieces = example.fullTextInPieces;
+            NSArray *expectedPieces = [NSArray arrayWithObjects:groupText, exampleText, nil];
+            expect([fullTextPieces isEqual:expectedPieces]).to(be_truthy());
+        });
+
         describe(@"when the parent also has a parent", ^{
             __block CDRExampleGroup *rootGroup;
             NSString *rootGroupText = @"Root!";
@@ -76,6 +97,12 @@ CDRSharedExampleBlock sharedExampleMethod = [^(NSDictionary *context) {
                 NSString *fullText = example.fullText;
                 expect(fullText).to(equal([NSString stringWithFormat:@"%@ %@ %@", rootGroupText, groupText, exampleText]));
             });
+
+            it(@"should include the text from all parents, pre-pended in the appopriate order in pieces", ^{
+                NSArray *fullTextPieces = example.fullTextInPieces;
+                NSArray *expectedPieces = [NSArray arrayWithObjects:rootGroupText, groupText, exampleText, nil];
+                expect([fullTextPieces isEqual:expectedPieces]).to(be_truthy());
+            });
         });
     });
 
@@ -85,7 +112,7 @@ CDRSharedExampleBlock sharedExampleMethod = [^(NSDictionary *context) {
         beforeEach(^{
             rootGroup = [[CDRExampleGroup alloc] initWithText:@"wibble wobble" isRoot:YES];
             [rootGroup add:example];
-            
+
             expect(example.parent).to_not(be_nil());
             BOOL hasFullText = example.parent.hasFullText;
             expect(hasFullText).to_not(be_truthy());
@@ -93,6 +120,12 @@ CDRSharedExampleBlock sharedExampleMethod = [^(NSDictionary *context) {
 
         it(@"should not include its parent's text", ^{
             expect(example.fullText).to(equal(example.text));
+        });
+
+        it(@"should not include its parent's text in pieces", ^{
+            NSArray *fullTextPieces = example.fullTextInPieces;
+            NSString *text = example.text;
+            expect([fullTextPieces isEqual:[NSArray arrayWithObject:text]]).to(be_truthy());
         });
     });
 } copy];
@@ -113,6 +146,38 @@ describe(@"CDRExample", ^{
         it(@"should return false", ^{
             BOOL hasChildren = example.hasChildren;
             expect(hasChildren).to_not(be_truthy());
+        });
+    });
+
+    describe(@"isFocused", ^{
+        it(@"should return false by default", ^{
+            expect([example isFocused]).to_not(be_truthy());
+        });
+
+        it(@"should return false when example is not focused", ^{
+            example.focused = NO;
+            expect([example isFocused]).to_not(be_truthy());
+        });
+
+        it(@"should return true when example is focused", ^{
+            example.focused = YES;
+            expect([example isFocused]).to(be_truthy());
+        });
+    });
+
+    describe(@"hasFocusedExamples", ^{
+        it(@"should return false by default", ^{
+            expect([example hasFocusedExamples]).to_not(be_truthy());
+        });
+
+        it(@"should return false when example is not focused", ^{
+            example.focused = NO;
+            expect([example hasFocusedExamples]).to_not(be_truthy());
+        });
+
+        it(@"should return true when example is focused", ^{
+            example.focused = YES;
+            expect([example hasFocusedExamples]).to(be_truthy());
         });
     });
 
@@ -155,7 +220,7 @@ describe(@"CDRExample", ^{
                 [example run];
             });
 
-            it(@"should be CDRExceptionStateError", ^{
+            it(@"should be CDRExampleStateError", ^{
                 CDRExampleState state = example.state;
                 expect(state).to(equal(CDRExampleStateError));
             });
@@ -168,7 +233,7 @@ describe(@"CDRExample", ^{
                 [example run];
             });
 
-            it(@"should be CDRExceptionStateError", ^{
+            it(@"should be CDRExampleStateError", ^{
                 CDRExampleState state = example.state;
                 expect(state).to(equal(CDRExampleStateError));
             });
@@ -181,9 +246,69 @@ describe(@"CDRExample", ^{
                 [example run];
             });
 
-            it(@"should be CDRExceptionStatePending", ^{
+            it(@"should be CDRExampleStatePending", ^{
                 CDRExampleState state = example.state;
                 expect(state).to(equal(CDRExampleStatePending));
+            });
+        });
+
+        context(@"when running in the focused specs mode", ^{
+            context(@"for an example that was focused", ^{
+                beforeEach(^{
+                    example.focused = YES;
+                });
+
+                it(@"should be CDRExampleStatePassed", ^{
+                    runInFocusedSpecsMode(example);
+                    expect([example state]).to(equal(CDRExampleStatePassed));
+                });
+            });
+
+            context(@"for an example that was not focused", ^{
+                beforeEach(^{
+                    example.focused = NO;
+                });
+
+                context(@"and its parent group was focused", ^{
+                    beforeEach(^{
+                        CDRExampleGroup *parentGroup = [[CDRExampleGroup alloc] initWithText:@"Parent group"];
+                        parentGroup.focused = YES;
+                        example.parent = parentGroup;
+                    });
+
+                    it(@"should be CDRExampleStatePassed", ^{
+                        runInFocusedSpecsMode(example);
+                        expect([example state]).to(equal(CDRExampleStatePassed));
+                    });
+                });
+
+                context(@"and its parent group was not focused", ^{
+                    __block CDRExampleGroup *parentGroup;
+
+                    beforeEach(^{
+                        parentGroup = [[CDRExampleGroup alloc] initWithText:@"Parent group"];
+                        parentGroup.focused = NO;
+                        example.parent = parentGroup;
+                    });
+
+                    it(@"should be CDRExampleStateSkipped", ^{
+                        runInFocusedSpecsMode(example);
+                        expect([example state]).to(equal(CDRExampleStateSkipped));
+                    });
+
+                    context(@"and its parent's parent group was focused", ^{
+                        beforeEach(^{
+                            CDRExampleGroup *parentsParentGroup = [[CDRExampleGroup alloc] initWithText:@"Parent's parent group"];
+                            parentsParentGroup.focused = YES;
+                            parentGroup.parent = parentsParentGroup;
+                        });
+
+                        it(@"should be CDRExampleStatePassed", ^{
+                            runInFocusedSpecsMode(example);
+                            expect([example state]).to(equal(CDRExampleStatePassed));
+                        });
+                    });
+                });
             });
         });
 
@@ -213,6 +338,7 @@ describe(@"CDRExample", ^{
                 expect(progress).to(equal(0.0));
             });
         });
+
         describe(@"when the state is passed", ^{
             beforeEach(^{
                 [example run];
@@ -227,7 +353,7 @@ describe(@"CDRExample", ^{
         });
     });
 
-    describe(@"fullText", ^{
+    describe(@"fullText/fullTextInPieces", ^{
         __block NSMutableDictionary *sharedExampleContext = [[NSMutableDictionary alloc] init];
 
         beforeEach(^{
@@ -269,6 +395,20 @@ describe(@"CDRExample", ^{
                 [example release];
                 example = [[CDRExample alloc] initWithText:@"I should pend" andBlock:nil];
                 [example run];
+            });
+
+            it(@"should return an empty string", ^{
+                NSString *message = example.message;
+                expect(message).to(equal(@""));
+            });
+        });
+
+        describe(@"for a skipped example", ^{
+            beforeEach(^{
+                [example release];
+                example = [[CDRExample alloc] initWithText:@"I should pend" andBlock:nil];
+                example.focused = NO;
+                runInFocusedSpecsMode(example);
             });
 
             it(@"should return an empty string", ^{

@@ -1,19 +1,21 @@
 #import "CDRExampleBase.h"
+#import "SpecHelper.h"
 
 @implementation CDRExampleBase
 
-@synthesize text = text_, parent = parent_;
+@synthesize text = text_, parent = parent_, focused = focused_;
 
 - (id)initWithText:(NSString *)text {
-  if (self = [super init]) {
-    text_ = [text retain];
-  }
-  return self;
+    if (self = [super init]) {
+        text_ = [text retain];
+        focused_ = NO;
+    }
+    return self;
 }
 
 - (void)dealloc {
-  [text_ release];
-  [super dealloc];
+    [text_ release];
+    [super dealloc];
 }
 
 - (void)setUp {
@@ -25,6 +27,15 @@
 - (void)run {
 }
 
+- (BOOL)shouldRun {
+    BOOL shouldOnlyRunFocused = [SpecHelper specHelper].shouldOnlyRunFocused;
+    return !shouldOnlyRunFocused || (shouldOnlyRunFocused && (self.isFocused || parent_.shouldRun));
+}
+
+- (BOOL)hasFocusedExamples {
+    return self.isFocused;
+}
+
 - (BOOL)hasChildren {
     return NO;
 }
@@ -34,10 +45,16 @@
 }
 
 - (NSString *)fullText {
+    return [[self fullTextInPieces] componentsJoinedByString:@" "];
+}
+
+- (NSMutableArray *)fullTextInPieces {
     if (self.parent && [self.parent hasFullText]) {
-        return [NSString stringWithFormat:@"%@ %@", [self.parent fullText], self.text];
+        NSMutableArray *array = [self.parent fullTextInPieces];
+        [array addObject:self.text];
+        return array;
     } else {
-        return self.text;
+        return [NSMutableArray arrayWithObject:self.text];
     }
 }
 

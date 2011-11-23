@@ -1,6 +1,7 @@
 #import "CDRDefaultReporter.h"
 #import "CDRExample.h"
 #import "CDRExampleGroup.h"
+#import "SpecHelper.h"
 
 @interface CDRDefaultReporter (private)
 - (void)printMessages:(NSArray *)messages;
@@ -17,6 +18,7 @@
     if (self = [super init]) {
         successMessages_ = [[NSMutableArray alloc] init];
         pendingMessages_ = [[NSMutableArray alloc] init];
+        skippedMessages_ = [[NSMutableArray alloc] init];
         failureMessages_ = [[NSMutableArray alloc] init];
     }
     return self;
@@ -26,7 +28,9 @@
     [rootGroups_ release];
     [startTime_ release];
     [successMessages_ release];
+    [endTime_ release];
     [failureMessages_ release];
+    [skippedMessages_ release];
     [pendingMessages_ release];
     [super dealloc];
 }
@@ -39,6 +43,7 @@
 }
 
 - (void)runDidComplete {
+    endTime_ = [[NSDate alloc] init];
     [self stopObservingExamples:rootGroups_];
 
     printf("\n");
@@ -54,7 +59,7 @@
 }
 
 - (int)result {
-    if ([failureMessages_ count]) {
+    if ([SpecHelper specHelper].shouldOnlyRunFocused || [failureMessages_ count]) {
         return 1;
     } else {
         return 0;
@@ -78,12 +83,20 @@
     return [NSString stringWithFormat:@"PENDING %@", [example fullText]];
 }
 
+- (NSString *)skippedToken {
+    return @">";
+}
+
+- (NSString *)skippedMessageForExample:(CDRExample *)example {
+    return [NSString stringWithFormat:@"SKIPPED %@", [example fullText]];
+}
+
 - (NSString *)failureToken {
     return @"F";
 }
 
 - (NSString *)failureMessageForExample:(CDRExample *)example {
-    return [NSString stringWithFormat:@"FAILURE %@\n%@\n", [example fullText], [example message]];
+    return [NSString stringWithFormat:@"FAILURE %@\n%@\n",[example fullText], example.failure];
 }
 
 - (NSString *)errorToken {
@@ -91,7 +104,7 @@
 }
 
 - (NSString *)errorMessageForExample:(CDRExample *)example {
-    return [NSString stringWithFormat:@"EXCEPTION %@\n%@\n", [example fullText], [example message]];
+    return [NSString stringWithFormat:@"EXCEPTION %@\n%@\n", [example fullText], example.failure];
 }
 
 #pragma mark Private interface
@@ -124,35 +137,80 @@
     }
 }
 
+- (void)printNestedFullTextForExample:(CDRExample *)example stateToken:(NSString *)token {
+    static NSMutableArray *previousBranch = nil;
+    int previousBranchLength = previousBranch.count;
+
+    NSMutableArray *exampleBranch = [example fullTextInPieces];
+    int exampleBranchLength = exampleBranch.count;
+
+    BOOL onPreviousBranch = YES;
+
+    for (int i=0; i<exampleBranchLength; i++) {
+        onPreviousBranch &= (previousBranchLength > i && [[exampleBranch objectAtIndex:i] isEqualToString:[previousBranch objectAtIndex:i]]);
+
+        if (!onPreviousBranch) {
+            const char *indicator = (exampleBranchLength - i) == 1 ? [token UTF8String] : " ";
+            printf("%s  %*s%s\n", indicator, 2*i, "", [[exampleBranch objectAtIndex:i] UTF8String]);
+        }
+    }
+
+    [previousBranch release];
+    previousBranch = exampleBranch;
+
+    [[previousBranch retain] removeLastObject];
+}
+
 - (void)reportOnExample:(CDRExample *)example {
+    NSString *stateToken = nil;
+
     switch (example.state) {
         case CDRExampleStatePassed:
             printf("%s", [[self successToken] cStringUsingEncoding:NSUTF8StringEncoding]);
             [successMessages_ addObject:[self successMessageForExample:example]];
+            stateToken = [self successToken];
             break;
         case CDRExampleStatePending:
-            printf("%s", [[self pendingToken] cStringUsingEncoding:NSUTF8StringEncoding]);
+            stateToken = [self pendingToken];
             [pendingMessages_ addObject:[self pendingMessageForExample:example]];
             break;
+        case CDRExampleStateSkipped:
+            stateToken = [self skippedToken];
+            [skippedMessages_ addObject:[self skippedMessageForExample:example]];
+            break;
         case CDRExampleStateFailed:
-            printf("%s", [[self failureToken] cStringUsingEncoding:NSUTF8StringEncoding]);
+            stateToken = [self failureToken];
             [failureMessages_ addObject:[self failureMessageForExample:example]];
             break;
         case CDRExampleStateError:
-            printf("%s", [[self errorToken] cStringUsingEncoding:NSUTF8StringEncoding]);
+            stateToken = [self errorToken];
             [failureMessages_ addObject:[self errorMessageForExample:example]];
             break;
         default:
             break;
     }
+
+    const char *reporterOpts = getenv("CEDAR_REPORTER_OPTS");
+
+    if (reporterOpts && strcmp(reporterOpts, "nested") == 0) {
+        [self printNestedFullTextForExample:example stateToken:stateToken];
+    } else {
+        printf("%s", [stateToken cStringUsingEncoding:NSUTF8StringEncoding]);
+    }
 }
 
 - (void)printStats {
-    printf("\nFinished in %.4f seconds\n\n", [[NSDate date] timeIntervalSinceDate:startTime_]);
+    printf("\nFinished in %.4f seconds\n\n", [endTime_ timeIntervalSinceDate:startTime_]);
     printf("%u examples, %u failures", exampleCount_, (unsigned int)failureMessages_.count);
+
     if (pendingMessages_.count) {
         printf(", %u pending", (unsigned int)pendingMessages_.count);
     }
+
+    if (skippedMessages_.count) {
+        printf(", %u skipped", (unsigned int)skippedMessages_.count);
+    }
+
     printf("\n");
 }
 

@@ -7,9 +7,11 @@
 
     NSMutableArray *successMessages_;
     NSMutableArray *pendingMessages_;
+    NSMutableArray *skippedMessages_;
     NSMutableArray *failureMessages_;
 
     NSDate *startTime_;
+    NSDate *endTime_;
     unsigned int exampleCount_;
 }
 @end
@@ -19,8 +21,13 @@
 - (NSString *)successMessageForExample:(CDRExample *)example;
 - (NSString *)pendingToken;
 - (NSString *)pendingMessageForExample:(CDRExample *)example;
+- (NSString *)skippedToken;
+- (NSString *)skippedMessageForExample:(CDRExample *)example;
 - (NSString *)failureToken;
 - (NSString *)failureMessageForExample:(CDRExample *)example;
 - (NSString *)errorToken;
 - (NSString *)errorMessageForExample:(CDRExample *)example;
+
+- (void)reportOnExample:(CDRExample *)example;
+- (void)printStats;
 @end

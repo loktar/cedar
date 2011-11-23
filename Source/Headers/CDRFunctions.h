@@ -2,6 +2,9 @@
 
 @protocol CDRExampleReporter;
 
-int runSpecsWithCustomExampleReporter(NSArray *specClasses, id<CDRExampleReporter> runner);
-int runAllSpecs();
-int runAllSpecsWithCustomExampleReporter(id<CDRExampleReporter> runner);
+Class CDRReporterClassFromEnv(const char *defaultReporterClassName);
+
+int runSpecs();
+int runAllSpecs() __attribute__((deprecated));
+int runSpecsWithCustomExampleReporter(id<CDRExampleReporter> runner);
+NSArray *specClassesToRun();

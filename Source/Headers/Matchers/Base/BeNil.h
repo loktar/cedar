@@ -8,25 +8,29 @@ namespace Cedar { namespace Matchers {
         BeNil & operator=(const BeNil &);
 
     public:
-        BeNil();
-        ~BeNil();
+        inline BeNil() : Base() {}
+        inline ~BeNil() {}
         // Allow default copy ctor.
 
-        virtual NSString * failure_message_end() const;
+        inline const BeNil & operator()() const { return *this; }
 
         template<typename U>
         bool matches(const U &) const;
 
         template<typename U>
         bool matches(U * const &) const;
+
+    protected:
+        inline /*virtual*/ NSString * failure_message_end() const { return @"be nil"; }
     };
 
-    BeNil be_nil();
+    static const BeNil be_nil = BeNil();
 
 #pragma mark Generic
     template<typename U>
     bool BeNil::matches(const U & actualValue) const {
         [[CDRSpecFailure specFailureWithReason:@"Attempt to compare non-pointer type to nil"] raise];
+        return NO;
     }
 
     template<typename U>

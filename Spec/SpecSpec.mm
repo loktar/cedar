@@ -29,7 +29,7 @@ static NSString *globalValue__;
 SPEC_BEGIN(SpecSpec)
 
 describe(@"Spec", ^ {
-    beforeEach(^ {
+    beforeEach(^{
         //    NSLog(@"=====================> I should run before all specs.");
     });
 
@@ -38,7 +38,7 @@ describe(@"Spec", ^ {
     });
 
     describe(@"a nested spec", ^ {
-        beforeEach(^ {
+        beforeEach(^{
             //      NSLog(@"=====================> I should run only before the nested specs.");
         });
 
@@ -56,7 +56,7 @@ describe(@"Spec", ^ {
     });
 
     context(@"a nested spec (context)", ^ {
-        beforeEach(^ {
+        beforeEach(^{
           //      NSLog(@"=====================> I should run only before the nested specs.");
         });
 
@@ -80,8 +80,14 @@ describe(@"Spec", ^ {
     it(@"should be pending", PENDING);
     it(@"should also be pending", nil);
     xit(@"should also be pending (xit)", ^{});
-    xcontext(@"xcontexted specs should be pending", ^{});
+
+    describe(@"described specs should be pending", PENDING);
+    describe(@"described specs should also be pending", nil);
     xdescribe(@"xdescribed specs should be pending", ^{});
+
+    context(@"contexted specs should be pending", PENDING);
+    context(@"contexted specs should also be pending", nil);
+    xcontext(@"xcontexted specs should be pending", ^{});
 });
 
 describe(@"The spec failure exception", ^{

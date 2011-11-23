@@ -29,7 +29,7 @@ BDD-style testing using Objective-C
         #import <Cedar/Cedar.h>
 
         int main (int argc, const char *argv[]) {
-          return runAllSpecs();
+          return runSpecs();
         }
 
 * Write your specs.  Cedar provides the SpecHelper.h file with some minimal
@@ -121,21 +121,44 @@ although you would more likely write the last line as:
 
     expect(aBoolean).to(be_truthy());
 
-It's also theoretically very easy to add your own matchers without modifying the Cedar library
-(more on this later).
+Here is a list of built-in matchers you can use:
 
-This matcher library is new, and not hardly battle-hardened.  It also breaks Apple's GCC compiler,
-and versions 2.0 and older of the LLVM compiler (this translates to any compiler shipped with a
-version of Xcode before 4.1).  Fortunately, LLVM 2.1 fixes the issues.  If you'd prefer a more 
-stable matcher library, you can still easily use [OCHamcrest](http://code.google.com/p/hamcrest/).
-Build and link the Hamcrest framework by following their instructions, and add the following at
-the top of your spec files:
+    expect(...).to(equal(10));
+    expect(...).to(be_nil());
+    expect(...).to(be_close_to(5)); // default within(.01)
+    expect(...).to(be_close_to(5).within(.02));
+    expect(...).to(be_instance_of([NSObject class]));
+    expect(...).to(be_same_instance_as(object));
+    expect(...).to(be_truthy());
+    expect(...).to_not(be_truthy());
+    expect(...).to(contain(@"something"));
+    expect(...).to(be_empty());
 
-    #define HC_SHORTHAND
-    #import <OCHamcrest/OCHamcrest.h>
+These matchers use C++ templates for type deduction.  You'll need to do two things to use them:
 
-Pivotal also has a fork of a [GitHub import of the OCHamcrest codebase](http://github.com/pivotal/OCHamcrest).
-This fork contains our iPhone-specific static framework target.
+* Change the file extension for each of your spec files from .m to .mm (this will tell the
+  compiler that the file contains C++ code).
+* Add the following line to the top of your spec files, after the file includes:
+
+        using namespace Cedar::Matchers;
+
+It's also theoretically very easy to add your own matchers without modifying the
+Cedar library (more on this later).
+
+These matchers will break Apple's GCC compiler, and versions 2.0 and older of the LLVM compiler
+(this translates to any compiler shipped with a version of Xcode before 4.1).  Fortunately, 
+LLVM 2.1 fixes the issues.
+
+Note: If you decide to use another matcher library that uses `expect(...)` to
+build its expectations (e.g. [Expecta](http://github.com/petejkim/expecta)) you
+will need to add `#define CEDAR_MATCHERS_COMPATIBILITY_MODE` before importing
+SpecHelper.h.  That will prevent Cedar from defining a macro that overrides that
+library's expect function.
+
+Note: If you prefer RSpec's `should` syntax you can write your expectations as follows:
+
+        1 + 2 should equal(3);
+        glass should_not be_empty();
 
 
 ## Shared example groups
@@ -236,14 +259,161 @@ explicitly pass nil as the second parameter.  The parameter is necessary because
 C, and thus Objective-C, doesn't support function parameter overloading or
 default parameters.
 
+
+## Focused specs
+
+Sometimes when debugging or developing a new feature it is useful to run only a
+subset of your tests.  That can be achieved by marking any number/combination of
+examples with an 'f'. You can use `fit`, `fdescribe` and `fcontext` like this:
+
+          fit(@"should do something eventually", ^{
+              // ...
+          });
+
+If your test suite has at least one focused example, all focused examples will
+run and non-focused examples will be skipped and reported as such (shown as '>'
+in default reporter output).
+
+It might not be immediately obvious why the test runner always returns a
+non-zero exit code when a test suite contains at least one focused example. That
+was done to make CI fail if someone accidently forgets to unfocus focused
+examples before commiting and pushing.
+
+
+## Reporters
+
+When running in headless mode by default Cedar uses `CDRDefaultReporter` to
+output test results.  Here is how it looks:
+
+    .P..P..
+
+    PENDING CDRExample hasChildren should return false by default
+    PENDING CDRExample hasFocusedExamples should return false by default
+
+    Finished in 0.0166 seconds
+    7 examples, 0 failures, 2 pending
+
+Most of the time above output is exactly what you want to see; however, in some
+cases you might actually want to see full names of running examples.  You can get
+more detailed output by setting `CEDAR_REPORTER_OPTS` env variable to `nested`.
+Here is how it looks after that:
+
+       CDRExample
+         hasChildren
+    .      should return false
+         isFocused
+    P      should return false by default
+    .      should return false when example is not focused
+    .      should return true when example is focused
+         hasFocusedExamples
+    P      should return false by default
+    .      should return false when example is not focused
+    .      should return true when example is focused
+
+    PENDING CDRExample hasChildren should return false by default
+    PENDING CDRExample hasFocusedExamples should return false by default
+
+    Finished in 0.0173 seconds
+    7 examples, 0 failures, 2 pending
+
+If the default reporter for some reason does not fit your needs you can always
+write a custom reporter.  `CDRTeamCityReporter` is one such example.  It was
+written to output test results in a way that TeamCity CI server can understand. 
+You can tell Cedar which reporter to use by setting `CEDAR_REPORTER_CLASS` env
+variable to your custom reporter class name.
+
+
+## OCUnit Support (new, not battle tested)
+
+We encourage you to use Cedar without OCUnit as described in the 'Usage' section
+above to avoid several OCUnit imposed limitations; however, if for some reason
+you choose to use OCUnit, Cedar does support it.  You can find example
+application that uses Cedar with OCUnit in OCUnitApp, OCUnitAppTests and
+OCUnitAppLogicTests directories.  Also Rakefile contains two useful rake tasks
+`ocunit:logic` and `ocunit:application` that let you run OCUnit tests from the
+command line.
+
+
+### OCUnit Logic Tests
+
+* Create new "Cocoa Touch Unit Testing Bundle" target in your project.
+  Name it LogicSpecs.
+* Build the Cedar framework.
+* Add the Cedar framework to your project, and link your LogicSpecs
+  target with it.
+* Add `-ObjC`, `-all_load` and `-lstdc++` to the Other Linker Flags build setting for the
+  LogicSpecs target.
+* Write your specs and include them in LogicSpecs target.  A spec file need not have
+  a header file, and looks like this:
+
+        #import <Cedar/SpecHelper.h>
+
+        SPEC_BEGIN(FooSpec)
+        describe(@"Foo", ^{
+          beforeEach(^{
+            ...
+          });
+
+          it(@"should do something", ^{
+            ...
+          });
+        });
+        SPEC_END
+
+* Build LogicSpecs and run them in test mode (click and hold Run and select
+  Test).  You should see specs result output in the console window.
+
+In addition to running logic tests in Xcode you can also run them from the
+command line.  To do so first copy Rakefile to your project and update
+`PROJECT_NAME`, `APP_NAME` and `OCUNIT_LOGIC_SPECS_TARGET_NAME` constants in it.
+ Run your tests with `rake ocunit:logic`.
+
+
+### OCUnit Application Tests
+
+* If you are creating new project just check "Include Unit Tests" option.  If
+  you want to add application tests to an existing application here is a [good
+  tutorial](http://twobitlabs.com/2011/06/adding-ocunit-to-an-existing-ios-project-with-xcode-4/).
+  Name your target ApplicationSpecs (or if you used "Include Unit Tests"
+  option Xcode will create target for you named [AppName]Tests.)
+* Build the Cedar-iPhone static framework.
+* Add the Cedar-iPhone static framework to your project, and link
+  ApplicationSpecs target with it.
+* Add `-ObjC`, `-all_load` and `-lstdc++` to the Other Linker Flags build setting for the
+  ApplicationSpecs target.
+* Write your specs and include them in ApplicationSpecs target.  A spec file
+  need not have a header file, and looks like this:
+
+        #import <Cedar/SpecHelper.h>
+
+        SPEC_BEGIN(FooSpec)
+        describe(@"Foo", ^{
+          beforeEach(^{
+            ...
+          });
+
+          it(@"should do something", ^{
+            ...
+          });
+        });
+        SPEC_END
+
+* Build ApplicationSpecs and run them in test mode (click and hold Run and
+  select Test).  You should see specs result output in the console window.
+
+In addition to running application tests in Xcode you can also run them from the
+command line.  To do so first copy Rakefile to your project and update
+`PROJECT_NAME`, `APP_NAME` and `OCUNIT_APPLICATION_SPECS_TARGET_NAME` constants
+in it.  Run your tests with `rake ocunit:application`.
+
+
 ## Code Snippets
 
 Xcode 4 has replaced text macros with code snippets.  If you're still using Xcode 3,
 check out the xcode3 branch from git and read the section on MACROS.
 
-The project root contains an archive file named CodeSnippets.tar.gz.  You can unpack
-the file yourself and place the codesnippet files into this location (you may need
-to create the directory):
+You can place the codesnippet files contained in CodeSnippets directory into this location
+(you may need to create the directory):
 
         ~/Library/Developer/XCode/UserData/CodeSnippets
 
